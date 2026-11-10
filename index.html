@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calwinder - Academic Calendar to Google Calendar</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'] }
+        }
+      }
+    };
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+  <style>
+    /* Ensure native calendar and clock pickers display in dark mode cleanly */
+    .dark [color-scheme="dark"], 
+    .dark input[type="date"], 
+    .dark input[type="time"] {
+      color-scheme: dark;
+    }
+  </style>
+</head>
+<body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 min-h-screen transition-colors duration-150">
+
+  <!-- Top Navigation -->
+  <header class="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-6 h-6 rounded bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-900 font-bold text-xs">
+        CW
+      </div>
+      <span class="font-semibold tracking-tight text-sm">Calwinder Engine</span>
+      <span class="text-xs px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 font-mono">v1.2</span>
+    </div>
+    <div class="flex items-center space-x-2">
+      <button id="apiKeyBtn" class="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium border border-zinc-200 dark:border-zinc-700 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition">
+        <i data-lucide="key" class="w-3.5 h-3.5"></i>
+        <span>API Key</span>
+        <span id="keyIndicator" class="w-2 h-2 rounded-full bg-zinc-400" title="Server Key Mode"></span>
+      </button>
+      <button id="themeToggle" class="p-1.5 border border-zinc-200 dark:border-zinc-700 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition text-zinc-600 dark:text-zinc-300" title="Toggle Theme">
+        <i id="themeIcon" data-lucide="moon" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Error / Alert Banner -->
+  <div id="alertBox" class="hidden max-w-5xl mx-auto mt-4 px-4 py-3 rounded border border-rose-500/50 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 text-xs flex justify-between items-center">
+    <span id="alertMsg"></span>
+    <button onclick="document.getElementById('alertBox').classList.add('hidden')" class="hover:underline font-medium ml-4">Dismiss</button>
+  </div>
+
+  <main class="max-w-5xl mx-auto px-6 py-8">
+    <!-- Ingestion Zone -->
+    <section class="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 rounded-lg p-6 mb-8 shadow-sm">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-sm font-semibold">Import Academic Schedule</h2>
+        <span id="engineBadge" class="text-[11px] font-mono text-zinc-400">Server Proxy Active</span>
+      </div>
+      <p class="text-xs text-zinc-500 mb-4">Upload your academic calendar PDF or paste schedule text. The server processes it via Gemini Flash; offline fallback regex runs automatically if quotas exhaust.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- File Drop Area -->
+        <label for="fileInput" class="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:border-zinc-400 dark:hover:border-zinc-500 transition text-center group">
+          <i data-lucide="upload" class="w-6 h-6 text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-200 mb-2 transition"></i>
+          <span class="text-xs font-medium">Click to select PDF or Schedule file</span>
+          <span class="text-[11px] text-zinc-500 mt-1">Multi-page syllabus, academic datesheet, or table</span>
+          <input id="fileInput" type="file" accept=".pdf,.txt" class="hidden" />
+        </label>
+
+        <!-- Direct Text Paste -->
+        <div class="flex flex-col">
+          <textarea id="rawTextInput" placeholder="Or paste timetable lines here:
+15/08/2026 - Independence Day (Holiday)
+08/09/2026 - Midterm Examination (Computational Math)
+15/09/2026 - Assignment 1 Lab Due" class="flex-1 w-full p-2.5 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 resize-none"></textarea>
+          <div class="mt-2 flex space-x-2">
+            <button id="parseTextBtn" class="flex-1 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-medium rounded hover:opacity-90 transition flex items-center justify-center space-x-1.5">
+              <span id="parseBtnSpinner" class="hidden"><i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i></span>
+              <span id="parseBtnText">Parse Input</span>
+            </button>
+            <button id="loadSampleBtn" class="px-3 py-1.5 border border-zinc-200 dark:border-zinc-700 text-xs rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition">Sample Data</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Table Action Header -->
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+      <div class="flex items-center space-x-2">
+        <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Events (<span id="eventCount">0</span>)</span>
+        <button id="addRowBtn" class="text-xs px-2.5 py-1 border border-zinc-200 dark:border-zinc-700 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition font-medium">+ Add Row</button>
+        <button id="deleteSelectedBtn" class="text-xs px-2.5 py-1 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition font-medium hidden">Delete Selected</button>
+      </div>
+      <div class="flex items-center space-x-2">
+        <button id="exportIcsBtn" class="flex items-center space-x-1.5 px-3 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-medium rounded hover:opacity-90 transition shadow-sm">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Export .ICS File</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Editable Event Table -->
+    <div class="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 rounded-lg overflow-x-auto shadow-sm">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 font-mono">
+          <tr>
+            <th class="p-3 w-8"><input type="checkbox" id="selectAll"></th>
+            <th class="p-3 min-w-[220px]">Event Title</th>
+            <th class="p-3 w-32">Category</th>
+            <th class="p-3 w-36">Date</th>
+            <th class="p-3 w-28">Start Time</th>
+            <th class="p-3 min-w-[160px]">Location / Venue</th>
+            <th class="p-3 w-16 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody id="eventTableBody" class="divide-y divide-zinc-200 dark:divide-zinc-800">
+          <tr id="emptyRow">
+            <td colspan="7" class="p-8 text-center text-zinc-400 dark:text-zinc-500 font-mono">No events imported. Drop a schedule or paste text above.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- API Key Modal (Backup Key) -->
+  <div id="apiKeyModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg max-w-md w-full p-6 shadow-xl">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold flex items-center space-x-2">
+          <i data-lucide="key" class="w-4 h-4"></i>
+          <span>Backup Gemini API Key</span>
+        </h3>
+        <button id="closeModalBtn" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg leading-none">&times;</button>
+      </div>
+      <p class="text-xs text-zinc-500 mb-4 leading-relaxed">
+        Calwinder uses the shared server key by default. If the server hits free-tier rate limits, paste your own free Gemini API key below. It is stored only in your browser (<code class="font-mono text-zinc-700 dark:text-zinc-300">localStorage</code>) and passed via request headers.
+      </p>
+      <input id="keyInput" type="password" placeholder="AIzaSy..." class="w-full p-2.5 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded mb-4 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+      <div class="flex items-center justify-between">
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-[11px] text-zinc-500 hover:underline flex items-center space-x-1">
+          <span>Get free key</span>
+          <i data-lucide="external-link" class="w-3 h-3"></i>
+        </a>
+        <div class="flex space-x-2">
+          <button id="clearKeyBtn" class="px-3 py-1.5 text-xs border border-zinc-200 dark:border-zinc-700 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition">Remove</button>
+          <button id="saveKeyBtn" class="px-3 py-1.5 text-xs bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded font-medium hover:opacity-90 transition">Save Key</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let events = [];
+    const STORAGE_KEY = 'calwinder_api_key';
+
+    // Theme Management
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const htmlEl = document.documentElement;
+
+    function applyTheme(isDark) {
+      if (isDark) {
+        htmlEl.classList.add('dark');
+        themeIcon.setAttribute('data-lucide', 'sun');
+      } else {
+        htmlEl.classList.remove('dark');
+        themeIcon.setAttribute('data-lucide', 'moon');
+      }
+      lucide.createIcons();
+    }
+
+    const savedTheme = localStorage.getItem('calwinder_theme');
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(savedTheme ? savedTheme === 'dark' : systemPrefersDark);
+
+    themeToggle.addEventListener('click', () => {
+      const isDark = !htmlEl.classList.contains('dark');
+      localStorage.setItem('calwinder_theme', isDark ? 'dark' : 'light');
+      applyTheme(isDark);
+    });
+
+    // API Key Modal & Indicator Handling
+    const apiKeyModal = document.getElementById('apiKeyModal');
+    const apiKeyBtn = document.getElementById('apiKeyBtn');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const saveKeyBtn = document.getElementById('saveKeyBtn');
+    const clearKeyBtn = document.getElementById('clearKeyBtn');
+    const keyInput = document.getElementById('keyInput');
+    const keyIndicator = document.getElementById('keyIndicator');
+    const engineBadge = document.getElementById('engineBadge');
+
+    function updateKeyStatusUI() {
+      const key = localStorage.getItem(STORAGE_KEY);
+      if (key && key.trim()) {
+        keyIndicator.className = 'w-2 h-2 rounded-full bg-emerald-500';
+        keyIndicator.title = 'Personal Backup Key Active';
+        engineBadge.textContent = 'Custom API Key Active';
+      } else {
+        keyIndicator.className = 'w-2 h-2 rounded-full bg-zinc-400';
+        keyIndicator.title = 'Default Server Proxy Mode';
+        engineBadge.textContent = 'Server Proxy Active';
+      }
+    }
+    updateKeyStatusUI();
+
+    apiKeyBtn.onclick = () => {
+      keyInput.value = localStorage.getItem(STORAGE_KEY) || '';
+      apiKeyModal.classList.remove('hidden');
+    };
+    closeModalBtn.onclick = () => apiKeyModal.classList.add('hidden');
+    saveKeyBtn.onclick = () => {
+      const val = keyInput.value.trim();
+      if (val) {
+        localStorage.setItem(STORAGE_KEY, val);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      updateKeyStatusUI();
+      apiKeyModal.classList.add('hidden');
+    };
+    clearKeyBtn.onclick = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      keyInput.value = '';
+      updateKeyStatusUI();
+      apiKeyModal.classList.add('hidden');
+    };
+
+    function showAlert(msg) {
+      const box = document.getElementById('alertBox');
+      document.getElementById('alertMsg').textContent = msg;
+      box.classList.remove('hidden');
+    }
+
+    // Table Rendering with Subtle High-Contrast Zinc Hover
+    const tableBody = document.getElementById('eventTableBody');
+    const eventCountEl = document.getElementById('eventCount');
+
+    function renderEvents() {
+      tableBody.innerHTML = '';
+      eventCountEl.textContent = events.length;
+
+      if (events.length === 0) {
+        tableBody.innerHTML = `<tr id="emptyRow"><td colspan="7" class="p-8 text-center text-zinc-400 dark:text-zinc-500 font-mono">No events imported. Drop a schedule or paste text above.</td></tr>`;
+        return;
+      }
+
+      events.forEach((ev, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-zinc-200 dark:border-zinc-800 transition hover:bg-zinc-100 dark:hover:bg-zinc-800/40';
+
+        tr.innerHTML = `
+          <td class="p-3"><input type="checkbox" class="rowSelect" data-idx="${idx}"></td>
+          <td class="p-2">
+            <input type="text" value="${ev.title || ''}" class="w-full bg-transparent px-2 py-1 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 rounded focus:bg-white dark:focus:bg-zinc-950 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 outline-none" placeholder="Event Name" oninput="events[${idx}].title = this.value">
+          </td>
+          <td class="p-2">
+            <select class="w-full bg-transparent px-2 py-1 text-zinc-900 dark:text-zinc-100 rounded focus:bg-white dark:focus:bg-zinc-950 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 outline-none text-xs" onchange="events[${idx}].category = this.value">
+              <option value="Exam" ${ev.category === 'Exam' ? 'selected' : ''} class="dark:bg-zinc-900">Exam</option>
+              <option value="Assignment" ${ev.category === 'Assignment' ? 'selected' : ''} class="dark:bg-zinc-900">Assignment</option>
+              <option value="Deadline" ${ev.category === 'Deadline' ? 'selected' : ''} class="dark:bg-zinc-900">Deadline</option>
+              <option value="Lecture" ${ev.category === 'Lecture' ? 'selected' : ''} class="dark:bg-zinc-900">Lecture</option>
+              <option value="Holiday" ${ev.category === 'Holiday' ? 'selected' : ''} class="dark:bg-zinc-900">Holiday</option>
+              <option value="Other" ${ev.category === 'Other' ? 'selected' : ''} class="dark:bg-zinc-900">Other</option>
+            </select>
+          </td>
+          <td class="p-2">
+            <input type="date" value="${ev.date || ''}" class="w-full bg-transparent px-2 py-1 text-zinc-900 dark:text-zinc-100 rounded focus:bg-white dark:focus:bg-zinc-950 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 outline-none" oninput="events[${idx}].date = this.value">
+          </td>
+          <td class="p-2">
+            <input type="time" value="${ev.startTime || ''}" class="w-full bg-transparent px-2 py-1 text-zinc-900 dark:text-zinc-100 rounded focus:bg-white dark:focus:bg-zinc-950 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 outline-none" oninput="events[${idx}].startTime = this.value">
+          </td>
+          <td class="p-2">
+            <input type="text" value="${ev.location || ''}" class="w-full bg-transparent px-2 py-1 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 rounded focus:bg-white dark:focus:bg-zinc-950 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 outline-none" placeholder="Venue / Room" oninput="events[${idx}].location = this.value">
+          </td>
+          <td class="p-2 text-right">
+            <button onclick="deleteRow(${idx})" class="text-zinc-400 hover:text-rose-500 p-1"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+          </td>
+        `;
+        tableBody.appendChild(tr);
+      });
+      lucide.createIcons();
+      attachCheckboxListeners();
+    }
+
+    window.deleteRow = function(idx) {
+      events.splice(idx, 1);
+      renderEvents();
+    };
+
+    document.getElementById('addRowBtn').onclick = () => {
+      const today = new Date().toISOString().split('T')[0];
+      events.push({ title: 'New Event', category: 'Exam', date: today, startTime: '09:00', location: '' });
+      renderEvents();
+    };
+
+    // Checkbox & Batch Deletion
+    function attachCheckboxListeners() {
+      const selectAll = document.getElementById('selectAll');
+      const rowSelects = document.querySelectorAll('.rowSelect');
+      const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+
+      function updateBatchBtn() {
+        const checkedCount = document.querySelectorAll('.rowSelect:checked').length;
+        deleteSelectedBtn.classList.toggle('hidden', checkedCount === 0);
+      }
+
+      selectAll.onchange = () => {
+        rowSelects.forEach(cb => cb.checked = selectAll.checked);
+        updateBatchBtn();
+      };
+
+      rowSelects.forEach(cb => cb.onchange = updateBatchBtn);
+
+      deleteSelectedBtn.onclick = () => {
+        const checkedIndices = Array.from(document.querySelectorAll('.rowSelect:checked'))
+          .map(cb => parseInt(cb.getAttribute('data-idx')))
+          .sort((a, b) => b - a);
+        checkedIndices.forEach(i => events.splice(i, 1));
+        selectAll.checked = false;
+        deleteSelectedBtn.classList.add('hidden');
+        renderEvents();
+      };
+    }
+
+    // Heuristic Fallback (Regex) Parser
+    function parseHeuristically(text) {
+      const lines = text.split('\n');
+      const parsed = [];
+      const dateRegex = /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b|\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s*(\d{4})?\b/i;
+
+      lines.forEach(line => {
+        line = line.trim();
+        if (!line) return;
+        const match = line.match(dateRegex);
+        if (match) {
+          let dateStr = '';
+          if (match[1] && match[2]) {
+            const day = match[1].padStart(2, '0');
+            const month = match[2].padStart(2, '0');
+            let year = match[3] || '2026';
+            if (year.length === 2) year = '20' + year;
+            dateStr = `${year}-${month}-${day}`;
+          }
+          const cleanTitle = line.replace(match[0], '').replace(/^[\s:\-\–]+|[\s:\-\–]+$/g, '');
+          let cat = 'Other';
+          const lower = line.toLowerCase();
+          if (lower.includes('exam') || lower.includes('quiz') || lower.includes('test')) cat = 'Exam';
+          else if (lower.includes('assign') || lower.includes('project')) cat = 'Assignment';
+          else if (lower.includes('due') || lower.includes('deadline')) cat = 'Deadline';
+          else if (lower.includes('holiday') || lower.includes('vacation')) cat = 'Holiday';
+
+          parsed.push({
+            title: cleanTitle || 'Academic Event',
+            category: cat,
+            date: dateStr || new Date().toISOString().split('T')[0],
+            startTime: '09:00',
+            location: ''
+          });
+        }
+      });
+      return parsed;
+    }
+
+    // Server Proxy Ingestion (/api/parse)
+    async function parseWithBackend(promptText) {
+      const userBackupKey = localStorage.getItem(STORAGE_KEY) || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (userBackupKey.trim()) {
+        headers['x-user-gemini-key'] = userBackupKey.trim();
+      }
+
+      const res = await fetch('/api/parse', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({ promptText })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (res.status === 429 || errorData.error === 'QUOTA_EXHAUSTED') {
+          showAlert('Shared server quota exhausted. Enter your free Gemini API key below to continue parsing.');
+          apiKeyModal.classList.remove('hidden');
+          throw new Error('Quota exhausted');
+        }
+        throw new Error(errorData.message || `Server responded with ${res.status}`);
+      }
+
+      return await res.json();
+    }
+
+    // Unified Text Processor
+    async function processScheduleText(text) {
+      const spinner = document.getElementById('parseBtnSpinner');
+      const btnText = document.getElementById('parseBtnText');
+      spinner.classList.remove('hidden');
+      btnText.textContent = 'Parsing...';
+
+      try {
+        const aiEvents = await parseWithBackend(text);
+        if (Array.isArray(aiEvents) && aiEvents.length > 0) {
+          events = aiEvents;
+          renderEvents();
+          return;
+        }
+      } catch (err) {
+        console.warn('API parsing unavailable or quota hit:', err);
+        // Fallback to local regex if not already loaded
+        if (events.length === 0) {
+          events = parseHeuristically(text);
+          renderEvents();
+        }
+      } finally {
+        spinner.classList.add('hidden');
+        btnText.textContent = 'Parse Input';
+      }
+    }
+
+    // Button Handlers
+    document.getElementById('parseTextBtn').onclick = () => {
+      const text = document.getElementById('rawTextInput').value;
+      if (text.trim()) processScheduleText(text);
+    };
+
+    document.getElementById('loadSampleBtn').onclick = () => {
+      events = [
+        { title: "Midterm Examination: Computational Mathematics", category: "Exam", date: "2026-09-08", startTime: "10:00", location: "Hall A" },
+        { title: "Assignment 1: C Programming Lab", category: "Assignment", date: "2026-09-15", startTime: "23:59", location: "Portal" },
+        { title: "Engineering Physics Lab Assessment", category: "Exam", date: "2026-09-22", startTime: "14:00", location: "Lab 204" },
+        { title: "Gandhi Jayanti (University Holiday)", category: "Holiday", date: "2026-10-02", startTime: "", location: "" }
+      ];
+      renderEvents();
+    };
+
+    // PDF Ingestion
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (file.type === 'application/pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map(item => item.str).join(' ');
+          fullText += pageText + '\n';
+        }
+        document.getElementById('rawTextInput').value = fullText;
+        processScheduleText(fullText);
+      } else {
+        const text = await file.text();
+        document.getElementById('rawTextInput').value = text;
+        processScheduleText(text);
+      }
+    });
+
+    // RFC 5545 Compliant .ICS Generator
+    document.getElementById('exportIcsBtn').onclick = () => {
+      if (events.length === 0) {
+        alert('No events to export.');
+        return;
+      }
+
+      let ics = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Calwinder Academic Engine//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH'
+      ];
+
+      events.forEach((ev, i) => {
+        if (!ev.date) return;
+        const cleanDate = ev.date.replace(/-/g, '');
+        const uid = `calwinder-${Date.now()}-${i}@local`;
+        
+        ics.push('BEGIN:VEVENT');
+        ics.push(`UID:${uid}`);
+        ics.push(`SUMMARY:${ev.title || 'Academic Event'}`);
+        if (ev.location) ics.push(`LOCATION:${ev.location}`);
+        ics.push(`CATEGORIES:${ev.category}`);
+
+        if (ev.startTime && ev.startTime.includes(':')) {
+          const cleanTime = ev.startTime.replace(/:/g, '') + '00';
+          ics.push(`DTSTART:${cleanDate}T${cleanTime}`);
+          // Default 1 hour duration
+          const hour = parseInt(ev.startTime.split(':')[0]);
+          const endHour = String((hour + 1) % 24).padStart(2, '0');
+          const cleanEndTime = endHour + ev.startTime.split(':')[1] + '00';
+          ics.push(`DTEND:${cleanDate}T${cleanEndTime}`);
+        } else {
+          // RFC 5545 All-day event formatting (end date is day + 1)
+          ics.push(`DTSTART;VALUE=DATE:${cleanDate}`);
+          const d = new Date(ev.date);
+          d.setDate(d.getDate() + 1);
+          const nextDay = d.toISOString().split('T')[0].replace(/-/g, '');
+          ics.push(`DTEND;VALUE=DATE:${nextDay}`);
+        }
+        ics.push('END:VEVENT');
+      });
+
+      ics.push('END:VCALENDAR');
+
+      const blob = new Blob([ics.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `calwinder-schedule-${new Date().toISOString().split('T')[0]}.ics`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    lucide.createIcons();
+  </script>
+</body>
+</html>
