@@ -396,7 +396,7 @@
       return await res.json();
     }
 
-    // Unified Text Processor
+   // Unified Text Processor with visible error handling
     async function processScheduleText(text) {
       const spinner = document.getElementById('parseBtnSpinner');
       const btnText = document.getElementById('parseBtnText');
@@ -409,10 +409,12 @@
           events = aiEvents;
           renderEvents();
           return;
+        } else {
+          showAlert('No structured events could be extracted. Check document format.');
         }
       } catch (err) {
-        console.warn('API parsing unavailable or quota hit:', err);
-        // Fallback to local regex if not already loaded
+        console.error('API Error:', err);
+        showAlert(`Error: ${err.message}. Falling back to local offline regex.`);
         if (events.length === 0) {
           events = parseHeuristically(text);
           renderEvents();
@@ -422,7 +424,6 @@
         btnText.textContent = 'Parse Input';
       }
     }
-
     // Button Handlers
     document.getElementById('parseTextBtn').onclick = () => {
       const text = document.getElementById('rawTextInput').value;
