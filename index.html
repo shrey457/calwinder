@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Calwinder - Academic Calendar to Google Calendar</title>
+  <title>Calwinder</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -19,7 +19,6 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
   <style>
-    /* Ensure native calendar and clock pickers display in dark mode cleanly */
     .dark [color-scheme="dark"], 
     .dark input[type="date"], 
     .dark input[type="time"] {
@@ -35,8 +34,7 @@
       <div class="w-6 h-6 rounded bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-900 font-bold text-xs">
         CW
       </div>
-      <span class="font-semibold tracking-tight text-sm">Calwinder Engine</span>
-      <span class="text-xs px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 font-mono">v1.2</span>
+      <span class="font-semibold tracking-tight text-sm">Calwinder</span>
     </div>
     <div class="flex items-center space-x-2">
       <button id="apiKeyBtn" class="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium border border-zinc-200 dark:border-zinc-700 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition">
@@ -63,7 +61,7 @@
         <h2 class="text-sm font-semibold">Import Academic Schedule</h2>
         <span id="engineBadge" class="text-[11px] font-mono text-zinc-400">Server Proxy Active</span>
       </div>
-      <p class="text-xs text-zinc-500 mb-4">Upload your academic calendar PDF or paste schedule text. The server processes it via Gemini Flash; offline fallback regex runs automatically if quotas exhaust.</p>
+      <p class="text-xs text-zinc-500 mb-4">Upload your academic calendar PDF or paste schedule text. The server processes it via Gemini; offline regex runs automatically if quotas exhaust.</p>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <!-- File Drop Area -->
@@ -239,7 +237,6 @@
       box.classList.remove('hidden');
     }
 
-    // Table Rendering with Subtle High-Contrast Zinc Hover
     const tableBody = document.getElementById('eventTableBody');
     const eventCountEl = document.getElementById('eventCount');
 
@@ -301,7 +298,6 @@
       renderEvents();
     };
 
-    // Checkbox & Batch Deletion
     function attachCheckboxListeners() {
       const selectAll = document.getElementById('selectAll');
       const rowSelects = document.querySelectorAll('.rowSelect');
@@ -330,7 +326,6 @@
       };
     }
 
-    // Heuristic Fallback (Regex) Parser
     function parseHeuristically(text) {
       const lines = text.split('\n');
       const parsed = [];
@@ -352,10 +347,10 @@
           const cleanTitle = line.replace(match[0], '').replace(/^[\s:\-\–]+|[\s:\-\–]+$/g, '');
           let cat = 'Other';
           const lower = line.toLowerCase();
-          if (lower.includes('exam') || lower.includes('quiz') || lower.includes('test')) cat = 'Exam';
+          if (lower.includes('exam') || lower.includes('quiz') || lower.includes('test') || lower.includes('mte') || lower.includes('ete')) cat = 'Exam';
           else if (lower.includes('assign') || lower.includes('project')) cat = 'Assignment';
           else if (lower.includes('due') || lower.includes('deadline')) cat = 'Deadline';
-          else if (lower.includes('holiday') || lower.includes('vacation')) cat = 'Holiday';
+          else if (lower.includes('holiday') || lower.includes('vacation') || lower.includes('break')) cat = 'Holiday';
 
           parsed.push({
             title: cleanTitle || 'Academic Event',
@@ -369,7 +364,6 @@
       return parsed;
     }
 
-    // Server Proxy Ingestion (/api/parse)
     async function parseWithBackend(promptText) {
       const userBackupKey = localStorage.getItem(STORAGE_KEY) || '';
       const headers = { 'Content-Type': 'application/json' };
@@ -386,7 +380,7 @@
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         if (res.status === 429 || errorData.error === 'QUOTA_EXHAUSTED') {
-          showAlert('Shared server quota exhausted. Enter your free Gemini API key below to continue parsing.');
+          showAlert('Shared server quota exhausted. Enter your free Gemini API key to continue parsing.');
           apiKeyModal.classList.remove('hidden');
           throw new Error('Quota exhausted');
         }
@@ -396,7 +390,6 @@
       return await res.json();
     }
 
-   // Unified Text Processor with visible error handling
     async function processScheduleText(text) {
       const spinner = document.getElementById('parseBtnSpinner');
       const btnText = document.getElementById('parseBtnText');
@@ -410,7 +403,7 @@
           renderEvents();
           return;
         } else {
-          showAlert('No structured events could be extracted. Check document format.');
+          showAlert('No structured events extracted. Falling back to local offline regex.');
         }
       } catch (err) {
         console.error('API Error:', err);
@@ -424,7 +417,7 @@
         btnText.textContent = 'Parse Input';
       }
     }
-    // Button Handlers
+
     document.getElementById('parseTextBtn').onclick = () => {
       const text = document.getElementById('rawTextInput').value;
       if (text.trim()) processScheduleText(text);
@@ -440,7 +433,6 @@
       renderEvents();
     };
 
-    // PDF Ingestion
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -464,7 +456,6 @@
       }
     });
 
-    // RFC 5545 Compliant .ICS Generator
     document.getElementById('exportIcsBtn').onclick = () => {
       if (events.length === 0) {
         alert('No events to export.');
@@ -474,7 +465,7 @@
       let ics = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'PRODID:-//Calwinder Academic Engine//EN',
+        'PRODID:-//Calwinder//EN',
         'CALSCALE:GREGORIAN',
         'METHOD:PUBLISH'
       ];
@@ -493,13 +484,11 @@
         if (ev.startTime && ev.startTime.includes(':')) {
           const cleanTime = ev.startTime.replace(/:/g, '') + '00';
           ics.push(`DTSTART:${cleanDate}T${cleanTime}`);
-          // Default 1 hour duration
           const hour = parseInt(ev.startTime.split(':')[0]);
           const endHour = String((hour + 1) % 24).padStart(2, '0');
           const cleanEndTime = endHour + ev.startTime.split(':')[1] + '00';
           ics.push(`DTEND:${cleanDate}T${cleanEndTime}`);
         } else {
-          // RFC 5545 All-day event formatting (end date is day + 1)
           ics.push(`DTSTART;VALUE=DATE:${cleanDate}`);
           const d = new Date(ev.date);
           d.setDate(d.getDate() + 1);
